@@ -299,7 +299,7 @@ export function createApp() {
       await db.update(schema.users).set({ lastActiveAt: now }).where(eq(schema.users.id, user.id));
 
       const token = crypto.randomBytes(32).toString('hex');
-      await saveSession(token, user);
+      await saveSession(token, user.id);
 
       await db.insert(schema.auditLogs).values({
         id: `aud_${Date.now()}`,

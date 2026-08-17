@@ -412,11 +412,13 @@ async function cleanExpiredReservations(orgId = "org_default") {
     return 0;
   }
 }
-async function saveSession(token, userId) {
+async function saveSession(token, userIdOrUser) {
   try {
+    const cleanUserId = typeof userIdOrUser === "string" ? userIdOrUser : userIdOrUser?.id;
+    if (!cleanUserId) return;
     await db.insert(sessions).values({
       token,
-      userId,
+      userId: cleanUserId,
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     }).onConflictDoNothing();
   } catch (error) {
@@ -645,7 +647,7 @@ function createApp() {
       const now = (/* @__PURE__ */ new Date()).toISOString();
       await db.update(users).set({ lastActiveAt: now }).where(eq2(users.id, user.id));
       const token = crypto.randomBytes(32).toString("hex");
-      await saveSession(token, user);
+      await saveSession(token, user.id);
       await db.insert(auditLogs).values({
         id: `aud_${Date.now()}`,
         orgId: user.orgId || "org_default",

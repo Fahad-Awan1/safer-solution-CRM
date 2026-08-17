@@ -462,11 +462,13 @@ export async function cleanExpiredReservations(orgId: string = 'org_default') {
 }
 
 // Sessions
-export async function saveSession(token: string, userId: string) {
+export async function saveSession(token: string, userIdOrUser: string | any) {
   try {
+    const cleanUserId = typeof userIdOrUser === 'string' ? userIdOrUser : userIdOrUser?.id;
+    if (!cleanUserId) return;
     await db.insert(schema.sessions).values({
       token,
-      userId,
+      userId: cleanUserId,
       createdAt: new Date().toISOString(),
     }).onConflictDoNothing();
   } catch (error) {
