@@ -216,7 +216,7 @@ var createPool = () => {
     const isCloud = !!process.env.DATABASE_URL || process.env.SQL_HOST && !["localhost", "127.0.0.1"].includes(process.env.SQL_HOST);
     let connStr = process.env.DATABASE_URL || "";
     if (connStr.includes("neon.tech") && !connStr.includes("-pooler")) {
-      connStr = connStr.replace(".c-5.", "-pooler.c-5.").replace(".aws.", "-pooler.aws.");
+      connStr = connStr.replace(".c-5.us-east-2.aws.neon.tech", "-pooler.c-5.us-east-2.aws.neon.tech");
     }
     const poolConfig = connStr ? {
       connectionString: connStr,
