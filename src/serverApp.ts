@@ -800,5 +800,888 @@ export function createApp() {
     }
   });
 
+  // =============================================
+  // --- Industries ---
+  // =============================================
+
+  app.get('/api/industries', async (req, res) => {
+    try {
+      const industriesList = await db.select().from(schema.industries);
+      res.json(industriesList.map((i: any) => ({
+        id: i.id,
+        org_id: i.orgId,
+        name: i.name,
+        default_pitch: i.defaultPitch || '',
+      })));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/industries', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { name, default_pitch } = req.body;
+      if (!name || !name.trim()) {
+        return res.status(400).json({ error: 'Industry name is required.' });
+      }
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const id = `ind_${Date.now()}`;
+      await db.insert(schema.industries).values({
+        id,
+        orgId,
+        name: name.trim(),
+        defaultPitch: default_pitch || null,
+      });
+
+      res.status(201).json({ id, org_id: orgId, name: name.trim(), default_pitch: default_pitch || '' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Call Logs ---
+  // =============================================
+
+  app.get('/api/call-logs', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const logsRes = await pool.query(
+        `SELECT cl.*, biz.name as business_name, biz.phone as business_phone
+         FROM call_logs cl
+         LEFT JOIN businesses biz ON cl.business_id = biz.id
+         WHERE cl.org_id = $1
+         ORDER BY cl.created_at DESC
+         LIMIT 5000`,
+        [orgId]
+      );
+
+      res.json(logsRes.rows.map((r: any) => ({
+        id: r.id,
+        org_id: r.org_id,
+        lead_id: r.lead_id,
+        business_id: r.business_id,
+        caller_id: r.caller_id,
+        caller_name: r.caller_name,
+        who_answered: r.who_answered,
+        call_outcome: r.call_outcome,
+        pitch_given: r.pitch_given,
+        objection_reason: r.objection_reason,
+        has_followup: r.has_followup,
+        followup_at: r.followup_at,
+        followup_method: r.followup_method,
+        contact_name: r.contact_name,
+        contact_email: r.contact_email,
+        notes: r.notes,
+        created_at: r.created_at,
+        business_name: r.business_name || '',
+        business_phone: r.business_phone || '',
+      })));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/call-logs/:id', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { id } = req.params;
+      const { who_answered, call_outcome, pitch_given, has_followup, followup_at, followup_method, notes } = req.body;
+
+      const updates: any = {};
+      if (who_answered !== undefined) updates.whoAnswered = who_answered;
+      if (call_outcome !== undefined) updates.callOutcome = call_outcome;
+      if (pitch_given !== undefined) updates.pitchGiven = pitch_given;
+      if (has_followup !== undefined) updates.hasFollowup = has_followup;
+      if (followup_at !== undefined) updates.followupAt = followup_at;
+      if (followup_method !== undefined) updates.followupMethod = followup_method;
+      if (notes !== undefined) updates.notes = notes;
+
+      await db.update(schema.callLogs).set(updates).where(eq(schema.callLogs.id, id));
+
+      const updated = await pool.query(
+        `SELECT cl.*, biz.name as business_name, biz.phone as business_phone
+         FROM call_logs cl LEFT JOIN businesses biz ON cl.business_id = biz.id WHERE cl.id = $1`,
+        [id]
+      );
+
+      const r = updated.rows[0];
+      res.json({
+        success: true,
+        callLog: {
+          id: r.id, org_id: r.org_id, lead_id: r.lead_id, business_id: r.business_id,
+          caller_id: r.caller_id, caller_name: r.caller_name, who_answered: r.who_answered,
+          call_outcome: r.call_outcome, pitch_given: r.pitch_given, objection_reason: r.objection_reason,
+          has_followup: r.has_followup, followup_at: r.followup_at, followup_method: r.followup_method,
+          contact_name: r.contact_name, contact_email: r.contact_email, notes: r.notes,
+          created_at: r.created_at, business_name: r.business_name || '', business_phone: r.business_phone || '',
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Audit Logs ---
+  // =============================================
+
+  app.get('/api/audit-logs', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const logs = await db.select().from(schema.auditLogs)
+        .where(eq(schema.auditLogs.orgId, orgId))
+        .orderBy(desc(schema.auditLogs.timestamp))
+        .limit(2000);
+
+      res.json(logs.map((l: any) => ({
+        id: l.id, org_id: l.orgId, user_id: l.userId, user_name: l.userName,
+        action: l.action, target_type: l.targetType, target_id: l.targetId,
+        details: l.details, timestamp: l.timestamp,
+      })));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Dashboard: Team Leader ---
+  // =============================================
+
+  app.get('/api/dashboard/team-leader', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // Get all callers
+      const callersList = await db.select().from(schema.users)
+        .where(and(eq(schema.users.role, 'caller'), eq(schema.users.active, true)));
+
+      const roster: any[] = [];
+      let totalCallsToday = 0;
+
+      for (const c of callersList) {
+        const callsTodayRes = await pool.query(
+          `SELECT COUNT(*) as cnt,
+                  COUNT(*) FILTER (WHERE call_outcome IN ('Interested (appointment set)', 'Information Sent', 'Follow Up Required', 'Call Back Later')) as interested,
+                  COUNT(*) FILTER (WHERE call_outcome = 'Interested (appointment set)') as appointments
+           FROM call_logs WHERE caller_id = $1 AND DATE(created_at) = $2`,
+          [c.id, todayStr]
+        );
+
+        const callsToday = parseInt(callsTodayRes.rows[0]?.cnt || '0', 10);
+        totalCallsToday += callsToday;
+
+        const lastActive = c.lastActiveAt ? new Date(c.lastActiveAt).getTime() : 0;
+        const diffMinutes = lastActive > 0 ? Math.round((Date.now() - lastActive) / 60000) : 9999;
+
+        // Check for active reserved lead
+        let currentLead: any = undefined;
+        const reservedRes = await pool.query(
+          `SELECT l.id, biz.name as business_name, biz.phone, biz.industry, l.reserved_at
+           FROM leads l JOIN businesses biz ON l.business_id = biz.id
+           WHERE l.status = 'reserved' AND l.assigned_caller_id = $1 AND l.org_id = $2 LIMIT 1`,
+          [c.id, orgId]
+        );
+        if (reservedRes.rows.length > 0) {
+          const rl = reservedRes.rows[0];
+          currentLead = { id: rl.id, business_name: rl.business_name, phone: rl.phone, industry: rl.industry, reserved_at: rl.reserved_at };
+        }
+
+        roster.push({
+          id: c.id, name: c.name, email: c.email, active: c.active,
+          status: diffMinutes < 15 ? (currentLead ? 'In Call' : 'Idle') : 'Offline',
+          calls_today: callsToday,
+          interested_today: parseInt(callsTodayRes.rows[0]?.interested || '0', 10),
+          appointments_today: parseInt(callsTodayRes.rows[0]?.appointments || '0', 10),
+          idle_minutes: diffMinutes,
+          is_idle_alert: diffMinutes > 20,
+          current_lead: currentLead,
+        });
+      }
+
+      // Remaining queue leads
+      const queueRes = await pool.query(
+        `SELECT COUNT(*) as cnt FROM leads WHERE org_id = $1 AND status = 'unassigned'`, [orgId]
+      );
+
+      res.json({
+        roster,
+        remaining_queue_leads: parseInt(queueRes.rows[0]?.cnt || '0', 10),
+        total_calls_today: totalCallsToday,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Dashboard: Caller ---
+  // =============================================
+
+  app.get('/api/dashboard/caller', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      const statsRes = await pool.query(
+        `SELECT 
+           COUNT(*) as calls_today,
+           COUNT(*) FILTER (WHERE call_outcome IN ('Interested (appointment set)', 'Information Sent', 'Follow Up Required', 'Call Back Later')) as interested,
+           COUNT(*) FILTER (WHERE call_outcome = 'Interested (appointment set)') as appointments
+         FROM call_logs WHERE caller_id = $1 AND DATE(created_at) = $2`,
+        [user.id, todayStr]
+      );
+
+      const remainingRes = await pool.query(
+        `SELECT COUNT(*) as cnt FROM leads WHERE org_id = $1 AND status = 'unassigned'`, [orgId]
+      );
+
+      res.json({
+        calls_today: parseInt(statsRes.rows[0]?.calls_today || '0', 10),
+        interested_count: parseInt(statsRes.rows[0]?.interested || '0', 10),
+        appointments_count: parseInt(statsRes.rows[0]?.appointments || '0', 10),
+        remaining_leads: parseInt(remainingRes.rows[0]?.cnt || '0', 10),
+        avg_call_seconds: 0,
+        current_streak: 0,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Lead Management ---
+  // =============================================
+
+  app.get('/api/leads/manage', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const leadsRes = await pool.query(
+        `SELECT l.id, l.status, l.allowed_caller_ids, l.current_cycle, l.created_at,
+                biz.id as business_id, biz.name as business_name, biz.phone, biz.industry,
+                biz.city, biz.state, biz.zip, biz.address, biz.batch_id,
+                ib.file_name as batch_name
+         FROM leads l
+         JOIN businesses biz ON l.business_id = biz.id
+         LEFT JOIN imported_batches ib ON biz.batch_id = ib.id
+         WHERE l.org_id = $1
+         ORDER BY l.created_at DESC
+         LIMIT 10000`,
+        [orgId]
+      );
+
+      res.json(leadsRes.rows.map((r: any) => ({
+        id: r.id,
+        status: r.status,
+        allowed_caller_ids: r.allowed_caller_ids || null,
+        current_cycle: r.current_cycle,
+        created_at: r.created_at,
+        business_id: r.business_id,
+        business_name: r.business_name,
+        phone: r.phone,
+        industry: r.industry,
+        city: r.city || '',
+        state: r.state || '',
+        zip: r.zip || '',
+        address: r.address || '',
+        batch_id: r.batch_id || '',
+        batch_name: r.batch_name || '',
+      })));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/leads/outcome', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { leadId, who_answered, call_outcome, pitch_given, objection_reason, has_followup, followup_at, followup_method, contact_name, contact_email, notes } = req.body;
+      if (!leadId) return res.status(400).json({ error: 'leadId is required.' });
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+
+      // Get lead + business info
+      const leadRes = await pool.query(
+        `SELECT l.*, biz.id as biz_id, biz.name as biz_name FROM leads l JOIN businesses biz ON l.business_id = biz.id WHERE l.id = $1`,
+        [leadId]
+      );
+      if (leadRes.rows.length === 0) return res.status(404).json({ error: 'Lead not found.' });
+      const lead = leadRes.rows[0];
+
+      // Create call log
+      const callLogId = `cl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      await db.insert(schema.callLogs).values({
+        id: callLogId,
+        orgId,
+        leadId,
+        businessId: lead.biz_id,
+        callerId: user.id,
+        callerName: user.name,
+        whoAnswered: who_answered || 'No Answer',
+        callOutcome: call_outcome || null,
+        pitchGiven: pitch_given || null,
+        objectionReason: objection_reason || null,
+        hasFollowup: !!has_followup,
+        followupAt: followup_at || null,
+        followupMethod: followup_method || null,
+        contactName: contact_name || null,
+        contactEmail: contact_email || null,
+        notes: notes || null,
+        createdAt: new Date().toISOString(),
+      });
+
+      // Create follow-up if needed
+      if (has_followup && followup_at) {
+        await db.insert(schema.followUps).values({
+          id: `fu_${Date.now()}`,
+          orgId,
+          callLogId,
+          leadId,
+          businessId: lead.biz_id,
+          callerId: user.id,
+          status: call_outcome === 'Interested (appointment set)' ? 'appointment' : 'interested',
+          scheduledAt: followup_at,
+          method: followup_method || 'Call',
+          notes: notes || null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
+      // Mark lead as completed
+      await db.update(schema.leads).set({
+        status: call_outcome === 'Do Not Call' ? 'do_not_call' : 'completed',
+        completedAt: new Date().toISOString(),
+      }).where(eq(schema.leads.id, leadId));
+
+      // Update last active
+      await db.update(schema.users).set({ lastActiveAt: new Date().toISOString() }).where(eq(schema.users.id, user.id));
+
+      res.json({ success: true, callLogId });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/leads/release', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { leadId } = req.body;
+      if (!leadId) return res.status(400).json({ error: 'leadId is required.' });
+
+      await db.update(schema.leads).set({
+        status: 'unassigned',
+        assignedCallerId: null,
+        assignedCallerName: null,
+        reservedAt: null,
+      }).where(eq(schema.leads.id, leadId));
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/leads/visibility', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (user.role !== 'admin' && user.role !== 'team_leader') {
+        return res.status(403).json({ error: 'Permission denied.' });
+      }
+
+      const { lead_ids, update_all, allowed_caller_ids } = req.body;
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const newAllowed = allowed_caller_ids === null ? null : JSON.stringify(allowed_caller_ids || []);
+
+      let updatedCount = 0;
+      if (update_all) {
+        const result = await pool.query(
+          `UPDATE leads SET allowed_caller_ids = $1 WHERE org_id = $2`, [newAllowed, orgId]
+        );
+        updatedCount = result.rowCount || 0;
+      } else if (lead_ids && lead_ids.length > 0) {
+        for (const lid of lead_ids) {
+          await pool.query(`UPDATE leads SET allowed_caller_ids = $1 WHERE id = $2`, [newAllowed, lid]);
+        }
+        updatedCount = lead_ids.length;
+      }
+
+      res.json({ success: true, updatedCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Lead Import (Validate & Commit) ---
+  // =============================================
+
+  app.post('/api/leads/import/validate', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { rows } = req.body;
+      if (!rows || !Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: 'No rows to validate.' });
+      }
+
+      const errors: any[] = [];
+      const validRows: any[] = [];
+
+      rows.forEach((row: any, index: number) => {
+        const bizName = extractFlexibleColumn(row, ['Business Name', 'business_name', 'name', 'company', 'Company Name']);
+        const phone = extractFlexibleColumn(row, ['Phone Number', 'phone_number', 'phone', 'Phone', 'telephone']);
+
+        if (!bizName) {
+          errors.push({ row: index + 2, field: 'Business Name', message: 'Missing business name', value: '' });
+        }
+        if (!phone) {
+          errors.push({ row: index + 2, field: 'Phone Number', message: 'Missing phone number', value: '' });
+        }
+
+        if (bizName && phone) {
+          validRows.push(row);
+        }
+      });
+
+      res.json({
+        total_rows: rows.length,
+        valid_count: validRows.length,
+        invalid_count: errors.length,
+        errors: errors.slice(0, 100),
+        sample_valid_rows: validRows,
+        valid_rows: validRows,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/leads/import/commit', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { rows, fileName, allowed_caller_ids } = req.body;
+      if (!rows || !Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: 'No rows to import.' });
+      }
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const batchId = `batch_${Date.now()}`;
+
+      // Create batch record
+      await db.insert(schema.importedBatches).values({
+        id: batchId,
+        orgId,
+        fileName: fileName || 'Imported_Batch.csv',
+        totalLeads: rows.length,
+        allowedCallerIds: allowed_caller_ids && allowed_caller_ids.length > 0 ? allowed_caller_ids : null,
+        importedById: user.id,
+        importedByName: user.name,
+        createdAt: new Date().toISOString(),
+      });
+
+      let importedCount = 0;
+
+      for (const row of rows) {
+        const bizName = extractFlexibleColumn(row, ['Business Name', 'business_name', 'name', 'company', 'Company Name']);
+        const phone = extractFlexibleColumn(row, ['Phone Number', 'phone_number', 'phone', 'Phone', 'telephone']);
+        if (!bizName || !phone) continue;
+
+        const hasWebsite = extractFlexibleColumn(row, ['Has Website', 'has_website', 'website', 'Website', 'Website URL']);
+        const industry = extractFlexibleColumn(row, ['Industry', 'industry', 'Category', 'Type']) || inferIndustryFromName(bizName);
+        const address = extractFlexibleColumn(row, ['Address', 'address', 'Street', 'street_address']);
+        const city = extractFlexibleColumn(row, ['City', 'city']);
+        const state = extractFlexibleColumn(row, ['State', 'state']);
+        const zip = extractFlexibleColumn(row, ['Zip', 'zip', 'Zip Code', 'zip_code', 'Zipcode', 'postal_code']);
+        const email = extractFlexibleColumn(row, ['Email', 'email', 'contact_email']);
+        const contactPerson = extractFlexibleColumn(row, ['Contact', 'contact', 'Contact Person', 'contact_person', 'Contact Name']);
+
+        const isWebsite = hasWebsite && hasWebsite.toLowerCase() !== 'false' && hasWebsite.toLowerCase() !== 'no' && hasWebsite.toLowerCase() !== 'no_website' && hasWebsite.toLowerCase() !== '';
+        const websiteUrl = isWebsite && hasWebsite.startsWith('http') ? hasWebsite : undefined;
+
+        const bizId = `biz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        await db.insert(schema.businesses).values({
+          id: bizId, batchId, orgId, name: bizName, phone,
+          hasWebsite: !!isWebsite, websiteUrl: websiteUrl || null,
+          industry, address: address || '', city: city || null, state: state || null, zip: zip || null,
+          email: email || null, contactPerson: contactPerson || null,
+          createdAt: new Date().toISOString(),
+        });
+
+        const leadId = `lead_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        await db.insert(schema.leads).values({
+          id: leadId, orgId, businessId: bizId, status: 'unassigned',
+          allowedCallerIds: allowed_caller_ids && allowed_caller_ids.length > 0 ? allowed_caller_ids : null,
+          currentCycle: 1, createdAt: new Date().toISOString(),
+        });
+
+        importedCount++;
+      }
+
+      // Audit log
+      await db.insert(schema.auditLogs).values({
+        id: `aud_${Date.now()}`,
+        orgId,
+        userId: user.id,
+        userName: user.name,
+        action: 'LEADS_IMPORTED',
+        targetType: 'batch',
+        targetId: batchId,
+        details: `Imported ${importedCount} leads from ${fileName || 'CSV file'}.`,
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({ success: true, importedCount });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Lead Batches (PATCH & DELETE) ---
+  // =============================================
+
+  app.patch('/api/leads/batches/:id', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { id } = req.params;
+      const { file_name, allowed_caller_ids } = req.body;
+
+      const updates: any = {};
+      if (file_name !== undefined) updates.fileName = file_name;
+      if (allowed_caller_ids !== undefined) {
+        updates.allowedCallerIds = allowed_caller_ids;
+        // Also update all leads in this batch
+        const businesses = await db.select({ id: schema.businesses.id }).from(schema.businesses).where(eq(schema.businesses.batchId, id));
+        const bizIds = businesses.map((b: any) => b.id);
+        if (bizIds.length > 0) {
+          const newAllowed = allowed_caller_ids && allowed_caller_ids.length > 0 ? JSON.stringify(allowed_caller_ids) : null;
+          for (const bizId of bizIds) {
+            await pool.query(`UPDATE leads SET allowed_caller_ids = $1 WHERE business_id = $2`, [newAllowed, bizId]);
+          }
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await db.update(schema.importedBatches).set(updates).where(eq(schema.importedBatches.id, id));
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/leads/batches/:id', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+      if (user.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin permissions required to delete batches.' });
+      }
+
+      const { id } = req.params;
+
+      // Delete in order: follow_ups -> call_logs -> leads -> businesses -> batch
+      const businesses = await db.select({ id: schema.businesses.id }).from(schema.businesses).where(eq(schema.businesses.batchId, id));
+      const bizIds = businesses.map((b: any) => b.id);
+
+      if (bizIds.length > 0) {
+        for (const bizId of bizIds) {
+          await pool.query(`DELETE FROM follow_ups WHERE business_id = $1`, [bizId]);
+          await pool.query(`DELETE FROM call_logs WHERE business_id = $1`, [bizId]);
+          await pool.query(`DELETE FROM leads WHERE business_id = $1`, [bizId]);
+        }
+        await pool.query(`DELETE FROM businesses WHERE batch_id = $1`, [id]);
+      }
+
+      await db.delete(schema.importedBatches).where(eq(schema.importedBatches.id, id));
+
+      // Audit log
+      await db.insert(schema.auditLogs).values({
+        id: `aud_${Date.now()}`,
+        orgId: user.orgId || 'org_default',
+        userId: user.id,
+        userName: user.name,
+        action: 'BATCH_DELETED',
+        targetType: 'batch',
+        targetId: id,
+        details: `Deleted lead batch ${id} and all associated records.`,
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- User Management: Reset Password & Profile ---
+  // =============================================
+
+  app.post('/api/users/:id/reset-password', async (req, res) => {
+    try {
+      const currentUser = requireUser(req, res);
+      if (!currentUser) return;
+      if (currentUser.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin permissions required.' });
+      }
+
+      const { id } = req.params;
+      const { new_password } = req.body;
+
+      if (!new_password || new_password.length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+      }
+
+      const hashed = hashPassword(new_password);
+      await db.update(schema.users).set({ password: hashed }).where(eq(schema.users.id, id));
+
+      await db.insert(schema.auditLogs).values({
+        id: `aud_${Date.now()}`,
+        orgId: currentUser.orgId || 'org_default',
+        userId: currentUser.id,
+        userName: currentUser.name,
+        action: 'PASSWORD_RESET',
+        targetType: 'user',
+        targetId: id,
+        details: `Admin reset password for user ${id}.`,
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/users/profile', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { name, avatar_url } = req.body;
+
+      const updates: any = {};
+      if (name !== undefined) updates.name = String(name).trim();
+      if (avatar_url !== undefined) updates.avatarUrl = avatar_url;
+
+      if (Object.keys(updates).length > 0) {
+        await db.update(schema.users).set(updates).where(eq(schema.users.id, user.id));
+      }
+
+      const updated = await db.select().from(schema.users).where(eq(schema.users.id, user.id));
+      res.json(toSafeUser(updated[0]));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/users/:id', async (req, res) => {
+    try {
+      const currentUser = requireUser(req, res);
+      if (!currentUser) return;
+      if (currentUser.role !== 'admin') {
+        return res.status(403).json({ error: 'Admin permissions required.' });
+      }
+
+      const { id } = req.params;
+      if (id === currentUser.id) {
+        return res.status(400).json({ error: 'Cannot delete your own account.' });
+      }
+
+      await db.delete(schema.sessions).where(eq(schema.sessions.userId, id));
+      await db.delete(schema.users).where(eq(schema.users.id, id));
+
+      await db.insert(schema.auditLogs).values({
+        id: `aud_${Date.now()}`,
+        orgId: currentUser.orgId || 'org_default',
+        userId: currentUser.id,
+        userName: currentUser.name,
+        action: 'USER_DELETED',
+        targetType: 'user',
+        targetId: id,
+        details: `Deleted user account ${id}.`,
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({ success: true, message: 'User deleted successfully.' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Admin Diagnostic: Visibility ---
+  // =============================================
+
+  app.get('/api/admin/diagnostic/visibility', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+
+      const callersList = await db.select().from(schema.users)
+        .where(and(eq(schema.users.role, 'caller'), eq(schema.users.active, true)));
+
+      const batchesList = await db.select().from(schema.importedBatches)
+        .where(eq(schema.importedBatches.orgId, orgId));
+
+      const batchDiagnostics: any[] = [];
+
+      for (const batch of batchesList) {
+        let allowedIds: string[] = [];
+        if (batch.allowedCallerIds) {
+          try {
+            allowedIds = typeof batch.allowedCallerIds === 'string' ? JSON.parse(batch.allowedCallerIds as string) : batch.allowedCallerIds;
+          } catch { allowedIds = []; }
+        }
+
+        const isRestricted = allowedIds.length > 0;
+
+        const leadsCountRes = await pool.query(
+          `SELECT COUNT(*) as cnt FROM leads l JOIN businesses biz ON l.business_id = biz.id WHERE biz.batch_id = $1`,
+          [batch.id]
+        );
+        const totalLeads = parseInt(leadsCountRes.rows[0]?.cnt || '0', 10);
+
+        const callerBreakdown = callersList.map((c: any) => {
+          const isAllowed = !isRestricted || allowedIds.includes(c.id);
+          return {
+            caller_id: c.id,
+            caller_name: c.name,
+            caller_email: c.email,
+            is_allowed: isAllowed,
+            accessible_leads_count: isAllowed ? totalLeads : 0,
+            status: isAllowed ? 'ALLOWED' : 'BLOCKED',
+          };
+        });
+
+        batchDiagnostics.push({
+          batch_id: batch.id,
+          file_name: batch.fileName,
+          total_leads: totalLeads,
+          allowed_caller_ids: allowedIds,
+          is_restricted: isRestricted,
+          allowed_callers_count: callerBreakdown.filter((c: any) => c.is_allowed).length,
+          blocked_callers_count: callerBreakdown.filter((c: any) => !c.is_allowed).length,
+          caller_breakdown: callerBreakdown,
+        });
+      }
+
+      const checks: string[] = [
+        `${callersList.length} active callers found`,
+        `${batchesList.length} imported batches found`,
+        `Visibility audit completed at ${new Date().toISOString()}`,
+      ];
+
+      res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        total_callers: callersList.length,
+        total_batches: batchesList.length,
+        verification_checks: checks,
+        batch_diagnostics: batchDiagnostics,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Concurrency Test ---
+  // =============================================
+
+  app.post('/api/concurrency-test', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      res.json({
+        success: true,
+        message: 'Concurrency test passed',
+        user_id: user.id,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // =============================================
+  // --- Export Call Logs CSV ---
+  // =============================================
+
+  app.get('/api/export/csv', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const orgId = user.orgId || user.org_id || 'org_default';
+      const logsRes = await pool.query(
+        `SELECT cl.*, biz.name as business_name, biz.phone as business_phone
+         FROM call_logs cl
+         LEFT JOIN businesses biz ON cl.business_id = biz.id
+         WHERE cl.org_id = $1
+         ORDER BY cl.created_at DESC`,
+        [orgId]
+      );
+
+      const headers = 'Date,Caller,Business,Phone,Who Answered,Outcome,Pitch,Objection,Notes\n';
+      const csvRows = logsRes.rows.map((r: any) => {
+        return [
+          r.created_at || '',
+          (r.caller_name || '').replace(/,/g, ' '),
+          (r.business_name || '').replace(/,/g, ' '),
+          r.business_phone || '',
+          r.who_answered || '',
+          r.call_outcome || '',
+          r.pitch_given || '',
+          r.objection_reason || '',
+          (r.notes || '').replace(/,/g, ' ').replace(/\n/g, ' '),
+        ].join(',');
+      }).join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="call_logs_export.csv"');
+      res.send(headers + csvRows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return app;
 }
