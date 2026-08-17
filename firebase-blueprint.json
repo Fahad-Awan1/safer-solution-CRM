@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "CRM system users and roles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "org_id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "password": { "type": "string" },
+        "avatar_url": { "type": "string" },
+        "two_factor_enabled": { "type": "boolean" },
+        "two_factor_pin": { "type": "string" },
+        "active": { "type": "boolean" },
+        "last_active_at": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "org_id", "name", "email", "role"]
+    },
+    "businesses": {
+      "title": "Business",
+      "description": "Business organizations / lead sources",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "org_id": { "type": "string" },
+        "industry_id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "leads": {
+      "title": "Lead",
+      "description": "Customer leads in the CRM",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "org_id": { "type": "string" },
+        "business_id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string" },
+        "assigned_to": { "type": "string" },
+        "allowed_caller_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Array of user IDs allowed to access/reserve this lead"
+        },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "name", "phone"]
+    },
+    "call_logs": {
+      "title": "CallLog",
+      "description": "Caller interactions with leads",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "org_id": { "type": "string" },
+        "lead_id": { "type": "string" },
+        "caller_id": { "type": "string" },
+        "disposition": { "type": "string" },
+        "notes": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "lead_id", "caller_id"]
+    },
+    "follow_ups": {
+      "title": "FollowUp",
+      "description": "Scheduled call-backs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "org_id": { "type": "string" },
+        "lead_id": { "type": "string" },
+        "caller_id": { "type": "string" },
+        "scheduled_date": { "type": "string" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["id", "lead_id", "scheduled_date"]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production Builds
+build/
+dist/
+dist-ssr/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Production Database Backups & Customer Dumps
+*.sql
+*.dump
+production_crm_backup.json
+.data/
+
+# Vercel & IDE
+.vercel
+.vscode/
+.idea/
+.DS_Store
+*.log

@@ -1,0 +1,6 @@
+{
+  "name": "Safer Solution CRM",
+  "description": "Cold-calling CRM replacing spreadsheets with atomic lead reservations, smart pitch suggestions, structured call outcome forms, and real-time dashboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
