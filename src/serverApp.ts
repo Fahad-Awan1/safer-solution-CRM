@@ -294,24 +294,18 @@ export function createApp() {
       }
 
       const now = new Date().toISOString();
-      await db.update(schema.users).set({ lastActiveAt: now }).where(eq(schema.users.id, user.id));
-
       const token = crypto.randomBytes(32).toString('hex');
-      await saveSession(token, user.id);
 
-      await db.insert(schema.auditLogs).values({
-        id: `aud_${Date.now()}`,
-        orgId: user.orgId || 'org_default',
-        userId: user.id,
-        userName: user.name,
-        action: 'USER_LOGIN',
-        targetType: 'user',
-        targetId: user.id,
-        details: `User ${user.name} logged into system.`,
-        timestamp: now,
-      });
+      // Update session and audit log asynchronously
+      pool.query(`UPDATE users SET last_active_at = $1 WHERE id = $2`, [now, user.id]).catch(() => {});
+      pool.query(`INSERT INTO sessions (token, user_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [token, user.id, now]).catch(() => {});
+      pool.query(
+        `INSERT INTO audit_logs (id, org_id, user_id, user_name, action, target_type, target_id, details, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
+        [`aud_${Date.now()}`, user.org_id || user.orgId || 'org_default', user.id, user.name, 'USER_LOGIN', 'user', user.id, `User ${user.name} logged into system.`, now]
+      ).catch(() => {});
 
-      res.json({ token, user: toSafeUser(user), ...toSafeUser(user) });
+      const safeUser = toSafeUser(user);
+      return res.json({ token, user: safeUser, ...safeUser });
     } catch (err: any) {
       console.error('Login error:', err);
       res.status(500).json({ error: err.message });

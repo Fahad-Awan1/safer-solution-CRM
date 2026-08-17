@@ -288,19 +288,6 @@ async function cleanExpiredReservations(orgId = "org_default") {
     return 0;
   }
 }
-async function saveSession(token, userIdOrUser) {
-  try {
-    const cleanUserId = typeof userIdOrUser === "string" ? userIdOrUser : userIdOrUser?.id;
-    if (!cleanUserId) return;
-    await db.insert(sessions).values({
-      token,
-      userId: cleanUserId,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    }).onConflictDoNothing();
-  } catch (error) {
-    console.error("Error saving session:", error);
-  }
-}
 async function getSessionUser(token) {
   try {
     const sessionRes = await db.select().from(sessions).where(eq(sessions.token, token));
@@ -545,21 +532,18 @@ function createApp() {
         }
       }
       const now = (/* @__PURE__ */ new Date()).toISOString();
-      await db.update(users).set({ lastActiveAt: now }).where(eq2(users.id, user.id));
       const token = crypto.randomBytes(32).toString("hex");
-      await saveSession(token, user.id);
-      await db.insert(auditLogs).values({
-        id: `aud_${Date.now()}`,
-        orgId: user.orgId || "org_default",
-        userId: user.id,
-        userName: user.name,
-        action: "USER_LOGIN",
-        targetType: "user",
-        targetId: user.id,
-        details: `User ${user.name} logged into system.`,
-        timestamp: now
+      pool.query(`UPDATE users SET last_active_at = $1 WHERE id = $2`, [now, user.id]).catch(() => {
       });
-      res.json({ token, user: toSafeUser(user), ...toSafeUser(user) });
+      pool.query(`INSERT INTO sessions (token, user_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [token, user.id, now]).catch(() => {
+      });
+      pool.query(
+        `INSERT INTO audit_logs (id, org_id, user_id, user_name, action, target_type, target_id, details, timestamp) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
+        [`aud_${Date.now()}`, user.org_id || user.orgId || "org_default", user.id, user.name, "USER_LOGIN", "user", user.id, `User ${user.name} logged into system.`, now]
+      ).catch(() => {
+      });
+      const safeUser = toSafeUser(user);
+      return res.json({ token, user: safeUser, ...safeUser });
     } catch (err) {
       console.error("Login error:", err);
       res.status(500).json({ error: err.message });
