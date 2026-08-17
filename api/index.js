@@ -217,7 +217,7 @@ var db = drizzle(sql, { schema: schema_exports });
 var pool = {
   query: async (text2, params) => {
     try {
-      const rows = params && params.length > 0 ? await sql(text2, params) : await sql(text2);
+      const rows = params && params.length > 0 ? await sql.query(text2, params) : await sql.query(text2);
       return { rows: Array.isArray(rows) ? rows : [], rowCount: Array.isArray(rows) ? rows.length : 0 };
     } catch (e) {
       console.error("Database query error:", e);
@@ -227,7 +227,7 @@ var pool = {
   connect: async () => {
     return {
       query: async (text2, params) => {
-        const rows = params && params.length > 0 ? await sql(text2, params) : await sql(text2);
+        const rows = params && params.length > 0 ? await sql.query(text2, params) : await sql.query(text2);
         return { rows: Array.isArray(rows) ? rows : [], rowCount: Array.isArray(rows) ? rows.length : 0 };
       },
       release: () => {
