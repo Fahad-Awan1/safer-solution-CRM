@@ -701,6 +701,17 @@ function createApp() {
       res.status(500).json({ error: err.message });
     }
   });
+  app2.post("/api/auth/heartbeat", async (req, res) => {
+    try {
+      const user = req.currentUser;
+      if (user) {
+        await db.update(users).set({ lastActiveAt: (/* @__PURE__ */ new Date()).toISOString() }).where(eq2(users.id, user.id));
+      }
+      res.json({ success: true, timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
   app2.get("/api/users", async (req, res) => {
     try {
       const usersList = await db.select().from(users);
@@ -766,7 +777,7 @@ function createApp() {
         return res.status(403).json({ error: "Admin permissions required." });
       }
       const { id } = req.params;
-      const { name, email, role, password, active, two_factor_enabled, two_factor_pin } = req.body;
+      const { name, email, role, password, active, two_factor_enabled, two_factor_pin, avatar_url, avatarUrl } = req.body;
       const existingUsers = await db.select().from(users).where(eq2(users.id, id));
       if (existingUsers.length === 0) {
         return res.status(404).json({ error: "User not found." });
@@ -778,6 +789,7 @@ function createApp() {
       if (active !== void 0) updates.active = !!active;
       if (two_factor_enabled !== void 0) updates.twoFactorEnabled = !!two_factor_enabled;
       if (two_factor_pin !== void 0) updates.twoFactorPin = two_factor_pin;
+      if (avatar_url !== void 0 || avatarUrl !== void 0) updates.avatarUrl = avatar_url ?? avatarUrl;
       if (password && password.trim()) updates.password = hashPassword(password.trim());
       await db.update(users).set(updates).where(eq2(users.id, id));
       await db.insert(auditLogs).values({
@@ -973,7 +985,8 @@ function createApp() {
         [orgId]
       );
       const now = /* @__PURE__ */ new Date();
-      const todayStr = now.toISOString().split("T")[0];
+      const todayStr = req.query.today || now.toISOString().split("T")[0];
+      const targetDate = req.query.date || todayStr;
       const callbacks = followUps2.rows.map((r) => {
         const sched = new Date(r.scheduled_at);
         const schedStr = !isNaN(sched.getTime()) ? sched.toISOString().split("T")[0] : "";
@@ -1008,8 +1021,8 @@ function createApp() {
         today_callbacks: callbacks.filter((c) => c.is_due_today),
         overdue_callbacks: callbacks.filter((c) => c.is_overdue),
         upcoming_callbacks: callbacks.filter((c) => !c.is_due_today && !c.is_overdue),
-        selected_date_callbacks: [],
-        target_date: todayStr,
+        selected_date_callbacks: callbacks.filter((c) => c.scheduled_date === targetDate),
+        target_date: targetDate,
         active_count: callbacks.filter((c) => c.is_due_today).length,
         total_overdue_count: callbacks.filter((c) => c.is_overdue).length
       });
@@ -1095,6 +1108,24 @@ function createApp() {
     } catch (err) {
       await client.query("ROLLBACK");
       client.release();
+      res.status(500).json({ error: err.message });
+    }
+  });
+  app2.post("/api/leads/reserve-specific", async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+      const { leadId } = req.body;
+      if (!leadId) return res.status(400).json({ error: "leadId is required." });
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      await db.update(leads).set({
+        status: "reserved",
+        assignedCallerId: user.id,
+        assignedCallerName: user.name,
+        reservedAt: nowIso
+      }).where(eq2(leads.id, leadId));
+      res.json({ success: true, leadId, assignedTo: user.name, reservedAt: nowIso });
+    } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });

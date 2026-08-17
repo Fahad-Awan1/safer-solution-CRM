@@ -336,6 +336,18 @@ export function createApp() {
     }
   });
 
+  app.post('/api/auth/heartbeat', async (req, res) => {
+    try {
+      const user = (req as any).currentUser;
+      if (user) {
+        await db.update(schema.users).set({ lastActiveAt: new Date().toISOString() }).where(eq(schema.users.id, user.id));
+      }
+      res.json({ success: true, timestamp: new Date().toISOString() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // --- Users & Team Management ---
 
   app.get('/api/users', async (req, res) => {
@@ -413,7 +425,7 @@ export function createApp() {
       }
 
       const { id } = req.params;
-      const { name, email, role, password, active, two_factor_enabled, two_factor_pin } = req.body;
+      const { name, email, role, password, active, two_factor_enabled, two_factor_pin, avatar_url, avatarUrl } = req.body;
 
       const existingUsers = await db.select().from(schema.users).where(eq(schema.users.id, id));
       if (existingUsers.length === 0) {
@@ -427,6 +439,7 @@ export function createApp() {
       if (active !== undefined) updates.active = !!active;
       if (two_factor_enabled !== undefined) updates.twoFactorEnabled = !!two_factor_enabled;
       if (two_factor_pin !== undefined) updates.twoFactorPin = two_factor_pin;
+      if (avatar_url !== undefined || avatarUrl !== undefined) updates.avatarUrl = avatar_url ?? avatarUrl;
       if (password && password.trim()) updates.password = hashPassword(password.trim());
 
       await db.update(schema.users).set(updates).where(eq(schema.users.id, id));
@@ -656,7 +669,8 @@ export function createApp() {
       );
 
       const now = new Date();
-      const todayStr = now.toISOString().split('T')[0];
+      const todayStr = (req.query.today as string) || now.toISOString().split('T')[0];
+      const targetDate = (req.query.date as string) || todayStr;
 
       const callbacks = followUps.rows.map((r: any) => {
         const sched = new Date(r.scheduled_at);
@@ -694,8 +708,8 @@ export function createApp() {
         today_callbacks: callbacks.filter((c: any) => c.is_due_today),
         overdue_callbacks: callbacks.filter((c: any) => c.is_overdue),
         upcoming_callbacks: callbacks.filter((c: any) => !c.is_due_today && !c.is_overdue),
-        selected_date_callbacks: [],
-        target_date: todayStr,
+        selected_date_callbacks: callbacks.filter((c: any) => c.scheduled_date === targetDate),
+        target_date: targetDate,
         active_count: callbacks.filter((c: any) => c.is_due_today).length,
         total_overdue_count: callbacks.filter((c: any) => c.is_overdue).length,
       });
@@ -796,6 +810,28 @@ export function createApp() {
     } catch (err: any) {
       await client.query('ROLLBACK');
       client.release();
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/leads/reserve-specific', async (req, res) => {
+    try {
+      const user = requireUser(req, res);
+      if (!user) return;
+
+      const { leadId } = req.body;
+      if (!leadId) return res.status(400).json({ error: 'leadId is required.' });
+
+      const nowIso = new Date().toISOString();
+      await db.update(schema.leads).set({
+        status: 'reserved',
+        assignedCallerId: user.id,
+        assignedCallerName: user.name,
+        reservedAt: nowIso,
+      }).where(eq(schema.leads.id, leadId));
+
+      res.json({ success: true, leadId, assignedTo: user.name, reservedAt: nowIso });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
