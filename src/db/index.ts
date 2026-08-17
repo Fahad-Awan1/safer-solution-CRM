@@ -2,10 +2,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { drizzle } from 'drizzle-orm/node-postgres';
-import pg from 'pg';
+import { Pool } from '@neondatabase/serverless';
 import * as schema from './schema';
-
-const { Pool } = pg;
 
 declare global {
   var _postgresPool: pg.Pool | undefined;

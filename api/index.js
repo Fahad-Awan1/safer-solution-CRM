@@ -13,7 +13,7 @@ import bcrypt2 from "bcryptjs";
 // src/db/index.ts
 import dotenv from "dotenv";
 import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
+import { Pool } from "@neondatabase/serverless";
 
 // src/db/schema.ts
 var schema_exports = {};
@@ -210,7 +210,6 @@ var followUpsRelations = relations(followUps, ({ one }) => ({
 
 // src/db/index.ts
 dotenv.config();
-var { Pool } = pg;
 var createPool = () => {
   if (!global._postgresPool) {
     const isCloud = !!process.env.DATABASE_URL || process.env.SQL_HOST && !["localhost", "127.0.0.1"].includes(process.env.SQL_HOST);
