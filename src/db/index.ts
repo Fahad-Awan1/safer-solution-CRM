@@ -19,8 +19,9 @@ export const createPool = () => {
       ? {
           connectionString: process.env.DATABASE_URL,
           ssl: isCloud ? { rejectUnauthorized: false } : false,
-          max: 10,
-          connectionTimeoutMillis: 15000,
+          max: 2,
+          idleTimeoutMillis: 10000,
+          connectionTimeoutMillis: 10000,
         }
       : {
           host: process.env.SQL_HOST || 'localhost',
@@ -28,8 +29,9 @@ export const createPool = () => {
           password: process.env.SQL_PASSWORD || 'postgres',
           database: process.env.SQL_DB_NAME || 'safer_solution_crm',
           ssl: isCloud ? { rejectUnauthorized: false } : false,
-          max: 10,
-          connectionTimeoutMillis: 15000,
+          max: 2,
+          idleTimeoutMillis: 10000,
+          connectionTimeoutMillis: 10000,
         };
 
     global._postgresPool = new Pool(poolConfig);

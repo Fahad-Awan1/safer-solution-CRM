@@ -217,16 +217,18 @@ var createPool = () => {
     const poolConfig = process.env.DATABASE_URL ? {
       connectionString: process.env.DATABASE_URL,
       ssl: isCloud ? { rejectUnauthorized: false } : false,
-      max: 10,
-      connectionTimeoutMillis: 15e3
+      max: 2,
+      idleTimeoutMillis: 1e4,
+      connectionTimeoutMillis: 1e4
     } : {
       host: process.env.SQL_HOST || "localhost",
       user: process.env.SQL_USER || "postgres",
       password: process.env.SQL_PASSWORD || "postgres",
       database: process.env.SQL_DB_NAME || "safer_solution_crm",
       ssl: isCloud ? { rejectUnauthorized: false } : false,
-      max: 10,
-      connectionTimeoutMillis: 15e3
+      max: 2,
+      idleTimeoutMillis: 1e4,
+      connectionTimeoutMillis: 1e4
     };
     global._postgresPool = new Pool(poolConfig);
     global._postgresPool.on("error", (err) => {
