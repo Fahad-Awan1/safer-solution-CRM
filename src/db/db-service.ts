@@ -1,5 +1,5 @@
-import { db, pool } from './index.ts';
-import * as schema from './schema.ts';
+import { db, pool } from './index';
+import * as schema from './schema';
 import { eq, and, or, isNull, inArray, sql, desc, lte, gte } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import fs from 'fs';

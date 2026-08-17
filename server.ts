@@ -3,7 +3,7 @@ dotenv.config();
 
 import express from 'express';
 import path from 'path';
-import { createApp } from './src/serverApp.ts';
+import { createApp } from './src/serverApp';
 
 export async function startServer() {
   const app = createApp();

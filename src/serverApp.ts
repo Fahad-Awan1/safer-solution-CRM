@@ -4,9 +4,9 @@ dotenv.config();
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { db, pool } from './db/index.ts';
-import * as schema from './db/schema.ts';
-import { seedInitialDataIfNeeded, ensureTablesExist, cleanExpiredReservations, saveSession, getSessionUser, deleteSession } from './db/db-service.ts';
+import { db, pool } from './db/index';
+import * as schema from './db/schema';
+import { seedInitialDataIfNeeded, ensureTablesExist, cleanExpiredReservations, saveSession, getSessionUser, deleteSession } from './db/db-service';
 import { eq, and, or, isNull, inArray, sql, desc, lte, gte } from 'drizzle-orm';
 
 // --- Types ---
