@@ -14,8 +14,9 @@ export const db = drizzle(sql, { schema });
 export const pool = {
   query: async (text: string, params?: any[]) => {
     try {
-      const rows = params && params.length > 0 ? await (sql as any).query(text, params) : await (sql as any).query(text);
-      return { rows: Array.isArray(rows) ? rows : [], rowCount: Array.isArray(rows) ? rows.length : 0 };
+      const result: any = params && params.length > 0 ? await (sql as any).query(text, params) : await (sql as any).query(text);
+      const rows = Array.isArray(result) ? result : (result?.rows || []);
+      return { rows, rowCount: rows.length };
     } catch (e: any) {
       console.error('Database query error:', e);
       throw e;
@@ -24,8 +25,9 @@ export const pool = {
   connect: async () => {
     return {
       query: async (text: string, params?: any[]) => {
-        const rows = params && params.length > 0 ? await (sql as any).query(text, params) : await (sql as any).query(text);
-        return { rows: Array.isArray(rows) ? rows : [], rowCount: Array.isArray(rows) ? rows.length : 0 };
+        const result: any = params && params.length > 0 ? await (sql as any).query(text, params) : await (sql as any).query(text);
+        const rows = Array.isArray(result) ? result : (result?.rows || []);
+        return { rows, rowCount: rows.length };
       },
       release: () => {},
     };
