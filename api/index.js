@@ -1529,7 +1529,7 @@ function createApp() {
       res.json({
         total_rows: rows.length,
         valid_count: validRows.length,
-        invalid_count: errors.length,
+        invalid_count: rows.length - validRows.length,
         errors: errors.slice(0, 100),
         sample_valid_rows: validRows,
         valid_rows: validRows
