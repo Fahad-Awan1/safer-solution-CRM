@@ -99,11 +99,6 @@ function inferIndustryFromName(name: string): string {
 export function createApp() {
   const app = express();
 
-  // Initialize Cloud SQL / PostgreSQL Database schema & seed asynchronously
-  seedInitialDataIfNeeded().catch((err) => {
-    console.error('[Database Seed/Init Error]:', err);
-  });
-
   app.use(express.json({ limit: '10mb' }));
 
   // Normalize route URLs for Vercel serverless rewrites

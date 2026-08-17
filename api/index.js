@@ -241,17 +241,6 @@ var db = drizzle(pool, { schema: schema_exports });
 // src/db/db-service.ts
 import { eq, and, lte } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import fs from "fs";
-import path from "path";
-var SALT_ROUNDS = 10;
-function isBcryptHash(str) {
-  return typeof str === "string" && (str.startsWith("$2a$") || str.startsWith("$2b$"));
-}
-function hashPassword(plain) {
-  if (!plain) return "";
-  if (isBcryptHash(plain)) return plain;
-  return bcrypt.hashSync(plain.trim(), SALT_ROUNDS);
-}
 async function ensureTablesExist() {
   try {
     await pool.query(`
@@ -382,237 +371,6 @@ async function ensureTablesExist() {
     console.error("[Database] Error ensuring tables exist:", err);
   }
 }
-async function seedInitialDataIfNeeded() {
-  try {
-    await ensureTablesExist();
-    const existingUsers = await db.select().from(users).limit(1);
-    const localDbPath = path.join(process.cwd(), ".data", "db.json");
-    const rootDbPath = path.join(process.cwd(), "db.json");
-    let localData = null;
-    if (fs.existsSync(localDbPath)) {
-      try {
-        localData = JSON.parse(fs.readFileSync(localDbPath, "utf-8"));
-      } catch (e) {
-      }
-    } else if (fs.existsSync(rootDbPath)) {
-      try {
-        localData = JSON.parse(fs.readFileSync(rootDbPath, "utf-8"));
-      } catch (e) {
-      }
-    }
-    if (existingUsers.length === 0) {
-      console.log("[Cloud SQL] Database is empty. Migrating local data or inserting seed data...");
-      const now = (/* @__PURE__ */ new Date()).toISOString();
-      const orgId = "org_default";
-      if (localData && Array.isArray(localData.users) && localData.users.length > 0) {
-        console.log(`[Cloud SQL] Migrating ${localData.users.length} users, ${localData.businesses?.length || 0} businesses, ${localData.leads?.length || 0} leads from local storage...`);
-        for (const u of localData.users) {
-          if (!u || !u.id) continue;
-          await db.insert(users).values({
-            id: u.id,
-            orgId: u.org_id || orgId,
-            name: u.name,
-            email: u.email,
-            role: u.role || "caller",
-            password: u.password ? hashPassword(u.password) : hashPassword("Caller@1234"),
-            avatarUrl: u.avatar_url || null,
-            twoFactorEnabled: !!u.two_factor_enabled,
-            twoFactorPin: u.two_factor_pin || null,
-            active: u.active !== void 0 ? u.active : true,
-            lastActiveAt: u.last_active_at || now,
-            createdAt: u.created_at || now
-          }).onConflictDoNothing();
-        }
-        if (Array.isArray(localData.industries)) {
-          for (const ind of localData.industries) {
-            if (!ind || !ind.id) continue;
-            await db.insert(industries).values({
-              id: ind.id,
-              orgId: ind.org_id || orgId,
-              name: ind.name,
-              defaultPitch: ind.default_pitch || null
-            }).onConflictDoNothing();
-          }
-        }
-        if (Array.isArray(localData.imported_batches)) {
-          for (const b of localData.imported_batches) {
-            if (!b || !b.id) continue;
-            await db.insert(importedBatches).values({
-              id: b.id,
-              orgId: b.org_id || orgId,
-              fileName: b.file_name || "Imported_Leads.csv",
-              totalLeads: b.total_leads || 0,
-              allowedCallerIds: Array.isArray(b.allowed_caller_ids) ? b.allowed_caller_ids : null,
-              importedById: b.imported_by_id || null,
-              importedByName: b.imported_by_name || null,
-              createdAt: b.created_at || now
-            }).onConflictDoNothing();
-          }
-        }
-        if (Array.isArray(localData.businesses)) {
-          for (const biz of localData.businesses) {
-            if (!biz || !biz.id) continue;
-            await db.insert(businesses).values({
-              id: biz.id,
-              batchId: biz.batch_id || null,
-              orgId: biz.org_id || orgId,
-              name: biz.name || "Business",
-              phone: biz.phone || "N/A",
-              hasWebsite: !!biz.has_website,
-              websiteUrl: biz.website_url || null,
-              industry: biz.industry || "General Business",
-              address: biz.address || "N/A",
-              city: biz.city || null,
-              state: biz.state || null,
-              zip: biz.zip || null,
-              email: biz.email || null,
-              contactPerson: biz.contact_person || null,
-              createdAt: biz.created_at || now
-            }).onConflictDoNothing();
-          }
-        }
-        const insertedUsersList = await db.select({ id: users.id }).from(users);
-        const validUserIds = new Set(insertedUsersList.map((u) => u.id));
-        if (Array.isArray(localData.leads)) {
-          for (const l of localData.leads) {
-            if (!l || !l.id || !l.business_id) continue;
-            const hasValidCaller = l.assigned_caller_id && validUserIds.has(l.assigned_caller_id);
-            await db.insert(leads).values({
-              id: l.id,
-              orgId: l.org_id || orgId,
-              businessId: l.business_id,
-              status: hasValidCaller ? l.status || "unassigned" : "unassigned",
-              assignedCallerId: hasValidCaller ? l.assigned_caller_id : null,
-              assignedCallerName: hasValidCaller ? l.assigned_caller_name : null,
-              allowedCallerIds: Array.isArray(l.allowed_caller_ids) ? l.allowed_caller_ids : null,
-              reservedAt: hasValidCaller ? l.reserved_at || null : null,
-              completedAt: l.completed_at || null,
-              currentCycle: l.current_cycle || 1,
-              createdAt: l.created_at || now
-            }).onConflictDoNothing();
-          }
-        }
-        if (Array.isArray(localData.call_logs)) {
-          for (const cl of localData.call_logs) {
-            if (!cl || !cl.id) continue;
-            const hasValidCaller = cl.caller_id && validUserIds.has(cl.caller_id);
-            await db.insert(callLogs).values({
-              id: cl.id,
-              orgId: cl.org_id || orgId,
-              leadId: cl.lead_id || null,
-              businessId: cl.business_id || null,
-              callerId: hasValidCaller ? cl.caller_id : null,
-              callerName: cl.caller_name || "Caller",
-              whoAnswered: cl.who_answered || "Answered",
-              callOutcome: cl.call_outcome || null,
-              pitchGiven: cl.pitch_given || null,
-              objectionReason: cl.objection_reason || null,
-              hasFollowup: !!cl.has_followup,
-              followupAt: cl.followup_at || null,
-              followupMethod: cl.followup_method || null,
-              contactName: cl.contact_name || null,
-              contactEmail: cl.contact_email || null,
-              notes: cl.notes || null,
-              createdAt: cl.created_at || now
-            }).onConflictDoNothing();
-          }
-        }
-        if (Array.isArray(localData.follow_ups)) {
-          for (const fu of localData.follow_ups) {
-            if (!fu || !fu.id || !fu.scheduled_at) continue;
-            const hasValidCaller = fu.caller_id && validUserIds.has(fu.caller_id);
-            await db.insert(followUps).values({
-              id: fu.id,
-              orgId: fu.org_id || orgId,
-              callLogId: fu.call_log_id || null,
-              leadId: fu.lead_id || null,
-              businessId: fu.business_id || null,
-              callerId: hasValidCaller ? fu.caller_id : null,
-              status: fu.status || "interested",
-              scheduledAt: fu.scheduled_at,
-              method: fu.method || "Call",
-              notes: fu.notes || null,
-              createdAt: fu.created_at || now
-            }).onConflictDoNothing();
-          }
-        }
-        if (Array.isArray(localData.audit_logs)) {
-          for (const al of localData.audit_logs) {
-            if (!al || !al.id) continue;
-            await db.insert(auditLogs).values({
-              id: al.id,
-              orgId: al.org_id || orgId,
-              userId: al.user_id || "system",
-              userName: al.user_name || "System",
-              action: al.action || "LOG",
-              targetType: al.target_type || "system",
-              targetId: al.target_id || null,
-              details: al.details || "",
-              timestamp: al.timestamp || now
-            }).onConflictDoNothing();
-          }
-        }
-        console.log("[Cloud SQL] Data migration completed successfully.");
-      } else {
-        await db.insert(users).values({
-          id: "usr_admin",
-          orgId,
-          name: "Fahad Riaz (Admin)",
-          email: "fahadriazcs@gmail.com",
-          role: "admin",
-          password: hashPassword("Fahad@6599"),
-          active: true,
-          lastActiveAt: now,
-          createdAt: now
-        }).onConflictDoNothing();
-        const defaultIndustries = [
-          { id: "ind_1", orgId, name: "Dental Clinic", defaultPitch: "AI Dental Front Desk" },
-          { id: "ind_2", orgId, name: "Barber Shop / Salon", defaultPitch: "24/7 Appointment Booking" },
-          { id: "ind_3", orgId, name: "Restaurant / Dining", defaultPitch: "Table & Takeout Reservation AI" },
-          { id: "ind_4", orgId, name: "Auto Repair", defaultPitch: "Service Scheduling Assistant" },
-          { id: "ind_5", orgId, name: "Plumbing & HVAC", defaultPitch: "Dispatch Call Handling AI" }
-        ];
-        for (const ind of defaultIndustries) {
-          await db.insert(industries).values(ind).onConflictDoNothing();
-        }
-        await db.insert(auditLogs).values({
-          id: `aud_seed_${Date.now()}`,
-          orgId,
-          userId: "usr_admin",
-          userName: "Fahad Riaz (Admin)",
-          action: "SYSTEM_INITIALIZED",
-          targetType: "system",
-          details: "Initialized agency CRM database on Cloud SQL (PostgreSQL) with Admin account.",
-          timestamp: now
-        }).onConflictDoNothing();
-        console.log("[Cloud SQL] Default seed data initialized.");
-      }
-      await pool.query(`
-        INSERT INTO leads (id, org_id, business_id, status, allowed_caller_ids, current_cycle, created_at)
-        SELECT 'lead_' || id, org_id, id, 'unassigned', NULL, 1, COALESCE(created_at, NOW())
-        FROM businesses b
-        WHERE NOT EXISTS (SELECT 1 FROM leads l WHERE l.business_id = b.id)
-      `);
-    } else {
-      const adminUsers = await db.select().from(users).where(eq(users.email, "fahadriazcs@gmail.com"));
-      if (adminUsers.length === 0) {
-        await db.insert(users).values({
-          id: "usr_admin",
-          orgId: "org_default",
-          name: "Fahad Riaz (Admin)",
-          email: "fahadriazcs@gmail.com",
-          role: "admin",
-          password: hashPassword("Fahad@6599"),
-          active: true,
-          lastActiveAt: (/* @__PURE__ */ new Date()).toISOString(),
-          createdAt: (/* @__PURE__ */ new Date()).toISOString()
-        }).onConflictDoNothing();
-      }
-    }
-  } catch (error) {
-    console.error("Error seeding Cloud SQL data:", error);
-  }
-}
 async function cleanExpiredReservations(orgId = "org_default") {
   try {
     let timeoutMinutes = 10;
@@ -689,19 +447,19 @@ async function deleteSession(token) {
 // src/serverApp.ts
 import { eq as eq2, and as and2, sql as sql2, desc as desc2 } from "drizzle-orm";
 dotenv2.config();
-var SALT_ROUNDS2 = 10;
-function isBcryptHash2(str) {
+var SALT_ROUNDS = 10;
+function isBcryptHash(str) {
   return typeof str === "string" && (str.startsWith("$2a$") || str.startsWith("$2b$"));
 }
-function hashPassword2(plain) {
+function hashPassword(plain) {
   if (!plain) return "";
-  if (isBcryptHash2(plain)) return plain;
-  return bcrypt2.hashSync(plain.trim(), SALT_ROUNDS2);
+  if (isBcryptHash(plain)) return plain;
+  return bcrypt2.hashSync(plain.trim(), SALT_ROUNDS);
 }
 function verifyPassword(plain, storedHashOrPlain) {
   if (!storedHashOrPlain || !plain) return false;
   const trimmedPlain = plain.trim();
-  if (isBcryptHash2(storedHashOrPlain)) {
+  if (isBcryptHash(storedHashOrPlain)) {
     return bcrypt2.compareSync(trimmedPlain, storedHashOrPlain);
   }
   return trimmedPlain === storedHashOrPlain.trim();
@@ -724,9 +482,6 @@ function toSafeUser(user) {
 }
 function createApp() {
   const app2 = express();
-  seedInitialDataIfNeeded().catch((err) => {
-    console.error("[Database Seed/Init Error]:", err);
-  });
   app2.use(express.json({ limit: "10mb" }));
   app2.use((req, res, next) => {
     if (!req.url.startsWith("/api") && req.url !== "/" && !req.url.startsWith("/index.html")) {
@@ -863,8 +618,8 @@ function createApp() {
         if (!isValid) {
           return res.status(401).json({ error: "Incorrect password. Please try again." });
         }
-        if (user.password && !isBcryptHash2(user.password)) {
-          const newHash = hashPassword2(String(password).trim());
+        if (user.password && !isBcryptHash(user.password)) {
+          const newHash = hashPassword(String(password).trim());
           await db.update(users).set({ password: newHash }).where(eq2(users.id, user.id));
         }
       } else if (userId) {
@@ -945,7 +700,7 @@ function createApp() {
       }
       const userId = `usr_${Date.now()}`;
       const plainPass = password && password.trim() ? password.trim() : "Caller@123";
-      const hashedPassword = hashPassword2(plainPass);
+      const hashedPassword = hashPassword(plainPass);
       const orgId = currentUser.orgId || currentUser.org_id || "org_default";
       const newUserValues = {
         id: userId,
@@ -997,7 +752,7 @@ function createApp() {
       if (active !== void 0) updates.active = !!active;
       if (two_factor_enabled !== void 0) updates.twoFactorEnabled = !!two_factor_enabled;
       if (two_factor_pin !== void 0) updates.twoFactorPin = two_factor_pin;
-      if (password && password.trim()) updates.password = hashPassword2(password.trim());
+      if (password && password.trim()) updates.password = hashPassword(password.trim());
       await db.update(users).set(updates).where(eq2(users.id, id));
       await db.insert(auditLogs).values({
         id: `aud_${Date.now()}`,
@@ -1322,9 +1077,7 @@ function createApp() {
 
 // api/index.ts
 var app = createApp();
-function handler(req, res) {
-  return app(req, res);
-}
+var index_default = app;
 export {
-  handler as default
+  index_default as default
 };
