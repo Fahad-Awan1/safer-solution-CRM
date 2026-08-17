@@ -251,10 +251,11 @@ export function createApp() {
       let user: any = null;
 
       if (email && password) {
-        const users = await db.select().from(schema.users).where(
-          sql`LOWER(TRIM(${schema.users.email})) = ${String(email).toLowerCase().trim()}`
+        const uRes = await pool.query(
+          `SELECT * FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1`,
+          [String(email).toLowerCase().trim()]
         );
-        user = users[0];
+        user = uRes.rows[0];
 
         if (!user) {
           return res.status(401).json({ error: 'Invalid email address or user account does not exist.' });

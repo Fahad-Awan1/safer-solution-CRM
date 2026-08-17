@@ -319,7 +319,7 @@ async function deleteSession(token) {
 }
 
 // src/serverApp.ts
-import { eq as eq2, and as and2, sql as sql2, desc as desc2 } from "drizzle-orm";
+import { eq as eq2, and as and2, desc as desc2 } from "drizzle-orm";
 dotenv2.config();
 var SALT_ROUNDS = 10;
 function isBcryptHash(str) {
@@ -504,10 +504,11 @@ function createApp() {
       const { email, password, userId, pin } = req.body;
       let user = null;
       if (email && password) {
-        const users2 = await db.select().from(users).where(
-          sql2`LOWER(TRIM(${users.email})) = ${String(email).toLowerCase().trim()}`
+        const uRes = await pool.query(
+          `SELECT * FROM users WHERE LOWER(TRIM(email)) = $1 LIMIT 1`,
+          [String(email).toLowerCase().trim()]
         );
-        user = users2[0];
+        user = uRes.rows[0];
         if (!user) {
           return res.status(401).json({ error: "Invalid email address or user account does not exist." });
         }
