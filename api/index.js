@@ -214,21 +214,25 @@ var { Pool } = pg;
 var createPool = () => {
   if (!global._postgresPool) {
     const isCloud = !!process.env.DATABASE_URL || process.env.SQL_HOST && !["localhost", "127.0.0.1"].includes(process.env.SQL_HOST);
-    const poolConfig = process.env.DATABASE_URL ? {
-      connectionString: process.env.DATABASE_URL,
-      ssl: isCloud ? { rejectUnauthorized: false } : false,
-      max: 2,
-      idleTimeoutMillis: 1e4,
-      connectionTimeoutMillis: 1e4
+    let connStr = process.env.DATABASE_URL || "";
+    if (connStr.includes("neon.tech") && !connStr.includes("-pooler")) {
+      connStr = connStr.replace(".c-5.", "-pooler.c-5.").replace(".aws.", "-pooler.aws.");
+    }
+    const poolConfig = connStr ? {
+      connectionString: connStr,
+      ssl: { rejectUnauthorized: false },
+      max: 5,
+      idleTimeoutMillis: 3e4,
+      connectionTimeoutMillis: 3e4
     } : {
       host: process.env.SQL_HOST || "localhost",
       user: process.env.SQL_USER || "postgres",
       password: process.env.SQL_PASSWORD || "postgres",
       database: process.env.SQL_DB_NAME || "safer_solution_crm",
       ssl: isCloud ? { rejectUnauthorized: false } : false,
-      max: 2,
-      idleTimeoutMillis: 1e4,
-      connectionTimeoutMillis: 1e4
+      max: 5,
+      idleTimeoutMillis: 3e4,
+      connectionTimeoutMillis: 3e4
     };
     global._postgresPool = new Pool(poolConfig);
     global._postgresPool.on("error", (err) => {
