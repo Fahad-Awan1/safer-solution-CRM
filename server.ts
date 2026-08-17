@@ -3,10 +3,8 @@ dotenv.config();
 
 import express, { Request, Response } from 'express';
 import path from 'path';
-import fs from 'fs';
 import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { createServer as createViteServer } from 'vite';
 import { db, pool } from './src/db/index.ts';
 import * as schema from './src/db/schema.ts';
 import { seedInitialDataIfNeeded, ensureTablesExist, cleanExpiredReservations, saveSession, getSessionUser, deleteSession } from './src/db/db-service.ts';
@@ -108,6 +106,14 @@ export function createApp() {
   });
 
   app.use(express.json({ limit: '10mb' }));
+
+  // Normalize route URLs for Vercel serverless rewrites
+  app.use((req, res, next) => {
+    if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/index.html')) {
+      req.url = '/api' + req.url;
+    }
+    next();
+  });
 
   // Session Token / Auth Middleware
   app.use(async (req, res, next) => {
@@ -2531,6 +2537,7 @@ export async function startServer() {
 
   // Mount Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
