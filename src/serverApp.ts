@@ -148,16 +148,13 @@ export function createApp() {
     return user;
   };
 
-  // Database Diagnostic & Auto-repair Endpoint
+  // Database Diagnostic Endpoint
   app.get('/api/db-diagnostic', async (req, res) => {
     try {
-      // Step 1: Ensure tables exist
-      await ensureTablesExist();
-
-      // Step 2: Query DB info
+      // Step 1: Query DB info
       const timeRes = await pool.query('SELECT NOW() as current_time, current_database(), current_user');
 
-      // Step 3: Get all table names in public schema
+      // Step 2: Get all table names in public schema
       const tablesRes = await pool.query(`
         SELECT table_name 
         FROM information_schema.tables 
