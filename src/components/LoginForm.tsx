@@ -48,9 +48,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
         return;
       }
 
-      const { token, ...user } = response;
-      setCurrentUserId(user.id, token);
-      onLoginSuccess(user as User);
+      const userData = response.user || response;
+      const token = response.token;
+      if (userData && userData.id) {
+        setCurrentUserId(userData.id, token);
+        onLoginSuccess(userData as User);
+      } else {
+        throw new Error('Invalid user payload received from server.');
+      }
     } catch (err: any) {
       setErrorMsg(err.message || 'Login failed. Please check your credentials.');
     } finally {
