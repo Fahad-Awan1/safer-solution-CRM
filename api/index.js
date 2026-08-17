@@ -12,8 +12,8 @@ import bcrypt2 from "bcryptjs";
 
 // src/db/index.ts
 import dotenv from "dotenv";
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "@neondatabase/serverless";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 
 // src/db/schema.ts
 var schema_exports = {};
@@ -210,26 +210,31 @@ var followUpsRelations = relations(followUps, ({ one }) => ({
 
 // src/db/index.ts
 dotenv.config();
-var createPool = () => {
-  if (!global._postgresPool) {
-    const isCloud = !!process.env.DATABASE_URL || process.env.SQL_HOST && !["localhost", "127.0.0.1"].includes(process.env.SQL_HOST);
-    const DEFAULT_NEON_URL = "postgresql://neondb_owner:npg_m7kGWiOZUAw4@ep-dry-forest-ay3ln0tr.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require";
-    const connStr = process.env.DATABASE_URL || DEFAULT_NEON_URL;
-    const poolConfig = {
-      connectionString: connStr,
-      ssl: { rejectUnauthorized: false },
-      max: 10,
-      connectionTimeoutMillis: 15e3
+var DEFAULT_NEON_URL = "postgresql://neondb_owner:npg_m7kGWiOZUAw4@ep-dry-forest-ay3ln0tr.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require";
+var connStr = process.env.DATABASE_URL || DEFAULT_NEON_URL;
+var sql = neon(connStr);
+var db = drizzle(sql, { schema: schema_exports });
+var pool = {
+  query: async (text2, params) => {
+    try {
+      const rows = params && params.length > 0 ? await sql(text2, params) : await sql(text2);
+      return { rows: Array.isArray(rows) ? rows : [], rowCount: Array.isArray(rows) ? rows.length : 0 };
+    } catch (e) {
+      console.error("Database query error:", e);
+      throw e;
+    }
+  },
+  connect: async () => {
+    return {
+      query: async (text2, params) => {
+        const rows = params && params.length > 0 ? await sql(text2, params) : await sql(text2);
+        return { rows: Array.isArray(rows) ? rows : [], rowCount: Array.isArray(rows) ? rows.length : 0 };
+      },
+      release: () => {
+      }
     };
-    global._postgresPool = new Pool(poolConfig);
-    global._postgresPool.on("error", (err) => {
-      console.error("Unexpected error on idle SQL pool client:", err);
-    });
   }
-  return global._postgresPool;
 };
-var pool = createPool();
-var db = drizzle(pool, { schema: schema_exports });
 
 // src/db/db-service.ts
 import { eq, and, lte } from "drizzle-orm";
