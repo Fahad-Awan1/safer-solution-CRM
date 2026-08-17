@@ -416,21 +416,11 @@ function createApp() {
   app2.get("/api/db-diagnostic", async (req, res) => {
     try {
       const timeRes = await pool.query("SELECT NOW() as current_time, current_database(), current_user");
-      const tablesRes = await pool.query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public'
-      `);
-      let userCount = 0;
-      try {
-        const uCountRes = await pool.query("SELECT COUNT(*) FROM users");
-        userCount = parseInt(uCountRes.rows[0].count, 10);
-      } catch (e) {
-      }
+      const uCountRes = await pool.query("SELECT COUNT(*) as count FROM users");
+      const userCount = parseInt(uCountRes.rows[0]?.count || "0", 10);
       res.json({
         status: "DATABASE_CONNECTED",
         db_info: timeRes.rows[0],
-        tables: tablesRes.rows.map((r) => r.table_name),
         user_count: userCount,
         env_check: {
           DATABASE_URL_EXISTS: !!process.env.DATABASE_URL,
@@ -443,11 +433,7 @@ function createApp() {
       console.error("Diagnostic error:", err);
       res.status(500).json({
         status: "DATABASE_ERROR",
-        message: err.message,
-        code: err.code,
-        detail: err.detail,
-        hint: err.hint,
-        cause: err.cause ? String(err.cause) : void 0
+        message: err.message
       });
     }
   });
@@ -513,11 +499,12 @@ function createApp() {
         }
         if (user.password && !isBcryptHash(user.password)) {
           const newHash = hashPassword(String(password).trim());
-          await db.update(users).set({ password: newHash }).where(eq2(users.id, user.id));
+          pool.query("UPDATE users SET password = $1 WHERE id = $2", [newHash, user.id]).catch(() => {
+          });
         }
       } else if (userId) {
-        const users2 = await db.select().from(users).where(eq2(users.id, userId));
-        user = users2[0];
+        const uRes = await pool.query("SELECT * FROM users WHERE id = $1 LIMIT 1", [userId]);
+        user = uRes.rows[0];
         if (!user) {
           return res.status(404).json({ error: "User account not found." });
         }

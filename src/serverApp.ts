@@ -163,27 +163,13 @@ export function createApp() {
   // Database Diagnostic Endpoint
   app.get('/api/db-diagnostic', async (req, res) => {
     try {
-      // Step 1: Query DB info
       const timeRes = await pool.query('SELECT NOW() as current_time, current_database(), current_user');
-
-      // Step 2: Get all table names in public schema
-      const tablesRes = await pool.query(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public'
-      `);
-
-      // Step 4: Count rows in users table if it exists
-      let userCount = 0;
-      try {
-        const uCountRes = await pool.query('SELECT COUNT(*) FROM users');
-        userCount = parseInt(uCountRes.rows[0].count, 10);
-      } catch (e) {}
+      const uCountRes = await pool.query('SELECT COUNT(*) as count FROM users');
+      const userCount = parseInt(uCountRes.rows[0]?.count || '0', 10);
 
       res.json({
         status: 'DATABASE_CONNECTED',
         db_info: timeRes.rows[0],
-        tables: tablesRes.rows.map((r: any) => r.table_name),
         user_count: userCount,
         env_check: {
           DATABASE_URL_EXISTS: !!process.env.DATABASE_URL,
@@ -197,10 +183,6 @@ export function createApp() {
       res.status(500).json({
         status: 'DATABASE_ERROR',
         message: err.message,
-        code: err.code,
-        detail: err.detail,
-        hint: err.hint,
-        cause: err.cause ? String(err.cause) : undefined,
       });
     }
   });
@@ -280,11 +262,11 @@ export function createApp() {
 
         if (user.password && !isBcryptHash(user.password)) {
           const newHash = hashPassword(String(password).trim());
-          await db.update(schema.users).set({ password: newHash }).where(eq(schema.users.id, user.id));
+          pool.query('UPDATE users SET password = $1 WHERE id = $2', [newHash, user.id]).catch(() => {});
         }
       } else if (userId) {
-        const users = await db.select().from(schema.users).where(eq(schema.users.id, userId));
-        user = users[0];
+        const uRes = await pool.query('SELECT * FROM users WHERE id = $1 LIMIT 1', [userId]);
+        user = uRes.rows[0];
         if (!user) {
           return res.status(404).json({ error: 'User account not found.' });
         }
