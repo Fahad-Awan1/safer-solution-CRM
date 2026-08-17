@@ -278,12 +278,11 @@ async function cleanExpiredReservations(orgId = "org_default") {
 }
 async function getSessionUser(token) {
   try {
-    const sessionRes = await db.select().from(sessions).where(eq(sessions.token, token));
-    if (sessionRes.length > 0) {
-      const u = await db.select().from(users).where(eq(users.id, sessionRes[0].userId));
-      return u[0] || null;
-    }
-    return null;
+    const res = await pool.query(
+      `SELECT u.* FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = $1 LIMIT 1`,
+      [token]
+    );
+    return res.rows[0] || null;
   } catch (error) {
     console.error("Error getting session user:", error);
     return null;
@@ -366,23 +365,34 @@ function createApp() {
     }
     next();
   });
+  const userCache = /* @__PURE__ */ new Map();
   app2.use(async (req, res, next) => {
     try {
       let user = null;
       const authHeader = req.headers["authorization"];
       const sessionToken = req.headers["x-session-token"] || (authHeader && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : void 0);
+      const userId = req.headers["x-user-id"] || req.query.userId;
       if (sessionToken) {
-        user = await getSessionUser(sessionToken);
+        const cached = userCache.get(sessionToken);
+        if (cached && cached.expires > Date.now()) {
+          user = cached.user;
+        } else {
+          user = await getSessionUser(sessionToken);
+          if (user) userCache.set(sessionToken, { user, expires: Date.now() + 6e4 });
+        }
       }
-      if (!user) {
-        const userId = req.headers["x-user-id"] || req.query.userId;
-        if (userId) {
-          const u = await db.select().from(users).where(eq2(users.id, userId));
-          if (u.length > 0) user = u[0];
+      if (!user && userId) {
+        const cached = userCache.get(userId);
+        if (cached && cached.expires > Date.now()) {
+          user = cached.user;
+        } else {
+          const uRes = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
+          user = uRes.rows[0] || null;
+          if (user) userCache.set(userId, { user, expires: Date.now() + 6e4 });
         }
       }
       if (user) {
-        req.currentUser = user;
+        req.currentUser = toSafeUser(user);
       }
     } catch (e) {
       console.error("Auth middleware error:", e);

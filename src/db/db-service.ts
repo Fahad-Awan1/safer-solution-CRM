@@ -478,12 +478,11 @@ export async function saveSession(token: string, userIdOrUser: string | any) {
 
 export async function getSessionUser(token: string) {
   try {
-    const sessionRes = await db.select().from(schema.sessions).where(eq(schema.sessions.token, token));
-    if (sessionRes.length > 0) {
-      const u = await db.select().from(schema.users).where(eq(schema.users.id, sessionRes[0].userId));
-      return u[0] || null;
-    }
-    return null;
+    const res = await pool.query(
+      `SELECT u.* FROM sessions s JOIN users u ON s.user_id = u.id WHERE s.token = $1 LIMIT 1`,
+      [token]
+    );
+    return res.rows[0] || null;
   } catch (error) {
     console.error('Error getting session user:', error);
     return null;

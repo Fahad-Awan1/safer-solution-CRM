@@ -109,6 +109,8 @@ export function createApp() {
     next();
   });
 
+  const userCache = new Map<string, { user: any; expires: number }>();
+
   // Session Token / Auth Middleware
   app.use(async (req, res, next) => {
     try {
@@ -117,21 +119,31 @@ export function createApp() {
       const sessionToken =
         (req.headers['x-session-token'] as string) ||
         (authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7) : undefined);
+      const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
 
       if (sessionToken) {
-        user = await getSessionUser(sessionToken);
+        const cached = userCache.get(sessionToken);
+        if (cached && cached.expires > Date.now()) {
+          user = cached.user;
+        } else {
+          user = await getSessionUser(sessionToken);
+          if (user) userCache.set(sessionToken, { user, expires: Date.now() + 60000 });
+        }
       }
 
-      if (!user) {
-        const userId = (req.headers['x-user-id'] as string) || (req.query.userId as string);
-        if (userId) {
-          const u = await db.select().from(schema.users).where(eq(schema.users.id, userId));
-          if (u.length > 0) user = u[0];
+      if (!user && userId) {
+        const cached = userCache.get(userId);
+        if (cached && cached.expires > Date.now()) {
+          user = cached.user;
+        } else {
+          const uRes = await pool.query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [userId]);
+          user = uRes.rows[0] || null;
+          if (user) userCache.set(userId, { user, expires: Date.now() + 60000 });
         }
       }
 
       if (user) {
-        (req as any).currentUser = user;
+        (req as any).currentUser = toSafeUser(user);
       }
     } catch (e) {
       console.error('Auth middleware error:', e);
