@@ -214,7 +214,8 @@ var { Pool } = pg;
 var createPool = () => {
   if (!global._postgresPool) {
     const isCloud = !!process.env.DATABASE_URL || process.env.SQL_HOST && !["localhost", "127.0.0.1"].includes(process.env.SQL_HOST);
-    let connStr = process.env.DATABASE_URL || "";
+    const DEFAULT_NEON_URL = "postgresql://neondb_owner:npg_m7kGWiOZUAw4@ep-dry-forest-ay3ln0tr.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require";
+    let connStr = process.env.DATABASE_URL || DEFAULT_NEON_URL;
     if (connStr.includes("neon.tech") && !connStr.includes("-pooler")) {
       connStr = connStr.replace(".c-5.us-east-2.aws.neon.tech", "-pooler.c-5.us-east-2.aws.neon.tech");
     }
